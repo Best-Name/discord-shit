@@ -48,7 +48,7 @@ function draw() {
     }
     mousePosHash = mouseX+mouseY
     if (keyIsPressed) {
-        socket.emit("move", Array.from(keys));
+        socket.emit("move", { keys: Array.from(keys), mouse: { x:mouseX, y:mouseY } });
     }
 }
 
