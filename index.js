@@ -71,17 +71,19 @@ app.get('/login', passport.authenticate('discord'));
 app.get('/callback',
     passport.authenticate('discord', { failureRedirect: '/' }),
     (req, res) => {
-        res.redirect('/profile');
+        console.log("[AUTH] Finished authentication");
+        res.redirect('/game');
     }
 );
 
-app.get('/profile', (req, res) => {
+app.get('/game', (req, res) => {
     if (!req.isAuthenticated() || !req.user) res.redirect('/');
     let user = req.user
 
     gameState[req.user.id] = { 
       x: 0, 
       y: 0,
+      eyeAngle: 0,
       color: `rgb(${Math.round(Math.random()*255)}, ${Math.round(Math.random()*255)}, ${Math.round(Math.random()*255)})`
     }
 
@@ -97,6 +99,7 @@ app.get('/profile', (req, res) => {
     }
     userData[req.user.id] = user;
 
+    console.log("[AUTH] Completed")
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
@@ -119,6 +122,7 @@ io.use((socket, next) => {
 
 // Error-handling middleware
 app.use((err, req, res, next) => {
+    console.log('[ERROR] Error caught:', err.message);
     if (err.message === 'Unauthorized') {
         // Redirect to login page
         return res.redirect('/login');
@@ -131,6 +135,7 @@ app.use((err, req, res, next) => {
 
 io.on('connection', (socket) => {
     const user = userData[socket.request.user.id];
+    const userGame = user?.id ? gameState[user.id] : 0;
     socket.on('join', () => {
         if (!user) {
             console.log("[EXPECTED_BUG] a user was not authenticated properly, " + socket.request.user.id)
@@ -138,26 +143,36 @@ io.on('connection', (socket) => {
             return;
         }
         console.log(`[JOIN] ${user.username} joined the party!`);
-        socket.broadcast.emit('fullSync', { userData, gameState });
+        io.emit('fullSync', { userData, gameState });
     });
 
     socket.on('move', (keys) => {
       let speed = cfg.baseSpeed;
 
       if (keys.includes("w")) {
-        gameState[user.id].y -= speed;  // Move up
+        userGame.y -= speed;  // Move up
       }
       if (keys.includes("a")) {
-        gameState[user.id].x -= speed;  // Move left
+        userGame.x -= speed;  // Move left
       }
       if (keys.includes("s")) {
-        gameState[user.id].y += speed;  // Move down
+        userGame.y += speed;  // Move down
       }
       if (keys.includes("d")) {
-        gameState[user.id].x += speed;  // Move right
+        userGame.x += speed;  // Move right
       }
 
-      socket.broadcast.emit("playerSync", { id: user.id, content: gameState[user.id] });
+      io.emit("playerSync", { id: user.id, content: userGame });
+    });
+
+    socket.on("mouse", (mouse) => {
+        const dx = mouse.x - userGame.x;
+        const dy = mouse.y - userGame.y;
+    
+        const angleRadians = Math.atan2(dy, dx);
+        userGame.eyeAngle = angleRadians * (180 / Math.PI);
+
+        io.emit("playerSync", { id: user.id, content: userGame });
     })
 
     socket.on('disconnect', () => {
@@ -178,7 +193,7 @@ io.on('connection', (socket) => {
     }
 };*/
 
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Server is running on localhost:${PORT}`);
 });

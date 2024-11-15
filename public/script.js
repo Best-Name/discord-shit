@@ -5,6 +5,7 @@ let keys = new Set();
 
 let wSize = 0;
 let aniTime = 0;
+let mousePosHash = 0; // basically mouseX+mouseY acting as hash
 
 function setup() {
     wSize = Math.min(windowWidth, windowHeight);
@@ -24,13 +25,28 @@ function draw() {
     stroke(1);
     for (let playerName in gameState) {
         const p = gameState[playerName];
+        stroke(1)
         fill(p.color)
-        square(p.x, p.y, wSize/50)
+        square(p.x, p.y, 20)
+
+        noStroke();
+        fill(255)
+        ellipse(p.x+5, p.y+5, 10, 10);
+        ellipse(p.x+15, p.y+5, 10, 10);
+        const pupils = getOffsetPoint(p.x, p.y, p.eyeAngle, 3);
+        fill (0)
+        ellipse(pupils.x+5, pupils.y+5, 5, 5);
+        ellipse(pupils.x+15, pupils.y+5, 5, 5);
     }
 
     fill(0); 
     rect(width / 2 - 35, height / 2 - 50, 5, 50);
 
+    // inputs
+    if (mousePosHash != mouseX+mouseY) {
+        socket.emit("mouse", { x:mouseX, y:mouseY })
+    }
+    mousePosHash = mouseX+mouseY
     if (keyIsPressed) {
         socket.emit("move", Array.from(keys));
     }
@@ -40,6 +56,16 @@ function getFlagOffset(id) {
     return Math.round(Math.sin(aniTime/3+id))
 }
 
+function getOffsetPoint(x_c, y_c, angle, distance) {
+    // Convert angle to radians
+    let angleRadians = radians(angle);
+  
+    // Calculate new x, y based on angle and distance
+    let x_offset = x_c + distance * cos(angleRadians);
+    let y_offset = y_c + distance * sin(angleRadians);
+  
+    return { x: x_offset, y: y_offset };
+}
 
 function keyPressed() {
     keys.add(key.toLowerCase());
