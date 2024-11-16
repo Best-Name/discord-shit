@@ -1,19 +1,27 @@
-const path = require("path");
-const express = require("express");
-const os = require("os");
-const http = require("http");
-const socketIo = require("socket.io");
-const passport = require("passport");
-const Strategy = require("passport-discord").Strategy;
-const session = require("express-session");
-const sql = require("connect-sqlite3")(session);
+import { join } from "path";
+import express from "express";
+// import os from "os";
+import { createServer } from "http";
+import { Server } from "socket.io";
+import passport from "passport";
+import { Strategy } from "passport-discord";
+import session from "express-session";
+import sqlite from "connect-sqlite3";
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-const cfg = require("./config.json");
-require("dotenv").config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+import cfg from "./config.json" assert { type: "json" };
+import GameManager from "./public/physics.js";
+import env from "dotenv"
+env.config();
 
 const app = express();
-const server = http.createServer(app);
-const io = socketIo(server);
+const server = createServer(app);
+const io = new Server(server);
+const sql = sqlite(session);
 
 passport.use(
 	new Strategy(
@@ -85,12 +93,7 @@ app.get("/game", (req, res) => {
 	if (!req.isAuthenticated() || !req.user) res.redirect("/");
 	let user = req.user;
 
-	gameState[req.user.id] = {
-		x: 0,
-		y: 0,
-		eyeAngle: 0,
-		color: `rgb(${Math.round(Math.random() * 255)}, ${Math.round(Math.random() * 255)}, ${Math.round(Math.random() * 255)})`,
-	};
+	game.create("Player", user.id, { id: user.id });
 
 	if (userData[req.user.id]) {
 		// every time they refresh
@@ -104,12 +107,12 @@ app.get("/game", (req, res) => {
 	}
 	userData[req.user.id] = user;
 
-	console.log("[AUTH] Completed");
-	res.sendFile(path.join(__dirname, "public", "index.html"));
+	console.log("[AUTH] User profile initialised");
+	res.sendFile(join(__dirname, "public", "index.html"));
 });
 
 const userData = {}; // very temporary solution
-const gameState = {};
+let game = new GameManager();
 
 // i have NO idea what this chunk does but its essential
 const wrap = (middleware) => (socket, next) =>
@@ -118,7 +121,7 @@ io.use(wrap(sessionMiddleware));
 io.use(wrap(passport.initialize()));
 io.use(wrap(passport.session()));
 io.use((socket, next) => {
-	if (socket.request.user || !userData[socket.request.user.id]) {
+	if (socket.request.user || !userData[socket.request.user?.id]) {
 		next();
 	} else {
 		next(new Error("Unauthorized"));
@@ -127,9 +130,8 @@ io.use((socket, next) => {
 
 // Error-handling middleware
 app.use((err, req, res, next) => {
-	console.log("[ERROR] Error caught:", err.message);
+	console.log("[ERROR] Error caught:", err);
 	if (err.message === "Unauthorized") {
-		// Redirect to login page
 		return res.redirect("/login");
 	}
 
@@ -140,58 +142,26 @@ app.use((err, req, res, next) => {
 
 io.on("connection", (socket) => {
 	const user = userData[socket.request.user.id];
-	const userGame = user?.id ? gameState[user.id] : 0;
 	socket.on("join", () => {
 		if (!user) {
 			console.log(
-				"[EXPECTED_BUG] a user was not authenticated properly, " +
+				"[AUTH] a user was not authenticated properly, " +
 					socket.request.user.id,
 			);
 			socket.emit("loginAgain");
 			return;
 		}
-		console.log(`[JOIN] ${user.username} joined the party!`);
-		io.emit("fullSync", { userData, gameState });
+		console.log(`[AUTH] ${user.username} joined the party!`);
+		io.emit("fullSync", { userData, state: game.state });
 	});
 
 	socket.on("move", (data) => {
-		const keys = data.keys;
-		const mouse = data.mouse;
-		let speed = cfg.baseSpeed;
-		const dx = mouse.x - userGame.x;
-		const dy = mouse.y - userGame.y;
-
-		const angleRadians = Math.atan2(dy, dx);
-		userGame.eyeAngle = angleRadians * (180 / Math.PI);
-
-		if (keys.includes("w")) {
-			userGame.y -= speed; // Move up
-		}
-		if (keys.includes("a")) {
-			userGame.x -= speed; // Move left
-		}
-		if (keys.includes("s")) {
-			userGame.y += speed; // Move down
-		}
-		if (keys.includes("d")) {
-			userGame.x += speed; // Move right
-		}
-
-		io.emit("playerSync", { id: user.id, content: userGame });
-	});
-
-	socket.on("mouse", (mouse) => {
-		const dx = mouse.x - userGame.x;
-		const dy = mouse.y - userGame.y;
-
-		const angleRadians = Math.atan2(dy, dx);
-		userGame.eyeAngle = angleRadians * (180 / Math.PI);
-
-		io.emit("playerSync", { id: user.id, content: userGame });
+		game = game.onMove(data)
+		io.emit("playerSync", { id: user.id, content: game.state });
 	});
 
 	socket.on("disconnect", () => {
-		console.log(`[LEAVE] soemone left :(`);
+		console.log(`[AUTH] soemone left :(`);
 	});
 });
 
