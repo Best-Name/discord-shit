@@ -8,12 +8,12 @@ import { Strategy } from "passport-discord";
 import session from "express-session";
 import sqlite from "connect-sqlite3";
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-import cfg from "./config.json" assert { type: "json" };
 import GameManager from "./public/physics.js";
 import env from "dotenv"
 env.config();
@@ -22,6 +22,19 @@ const app = express();
 const server = createServer(app);
 const io = new Server(server);
 const sql = sqlite(session);
+
+let cfg = {};
+const cfgPath = path.resolve('config.json');
+
+fs.readFile(cfgPath, 'utf8', (err, data) => {
+  if (err) {
+    console.error('Error reading the config file:', err);
+    return;
+  }
+  
+  cfg = JSON.parse(data);
+  console.log(cfg);
+});
 
 passport.use(
 	new Strategy(
@@ -157,7 +170,7 @@ io.on("connection", (socket) => {
 
 	socket.on("move", (data) => {
 		game = game.onMove(data)
-		io.emit("playerSync", { id: user.id, content: game.state });
+		io.emit("playerSync", { content: game.state });
 	});
 
 	socket.on("disconnect", () => {

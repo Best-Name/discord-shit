@@ -1,7 +1,7 @@
 //import * as p5 from 'https://unpkg.com/p5@1.4.0/lib/p5.min.js';
 import { io } from "https://esm.sh/socket.io-client";
 import GameManager from "./physics.js";
-console.log(GameManager);
+
 let game = new GameManager();
 const socket = io();
 let users = {};
